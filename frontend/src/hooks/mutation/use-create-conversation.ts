@@ -6,28 +6,30 @@ import OpenHands from "#/api/open-hands";
 import { setInitialQuery } from "#/state/initial-query-slice";
 import { RootState } from "#/store";
 import { useAuth } from "#/context/auth-context";
-import { useSettings } from "#/context/settings-context";
 
 export const useCreateConversation = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { gitHubToken } = useAuth();
-  const { settings } = useSettings();
   const queryClient = useQueryClient();
 
-  const { selectedRepository, files } = useSelector(
+  const { selectedRepository, files, importedProjectZip } = useSelector(
     (state: RootState) => state.initialQuery,
   );
 
   return useMutation({
     mutationFn: (variables: { q?: string }) => {
-      if (!variables.q?.trim() && !selectedRepository && files.length === 0) {
+      if (
+        !variables.q?.trim() &&
+        !selectedRepository &&
+        files.length === 0 &&
+        !importedProjectZip
+      ) {
         throw new Error("No query provided");
       }
 
       if (variables.q) dispatch(setInitialQuery(variables.q));
       return OpenHands.createConversation(
-        settings,
         gitHubToken || undefined,
         selectedRepository || undefined,
       );

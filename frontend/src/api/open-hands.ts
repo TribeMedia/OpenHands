@@ -9,9 +9,10 @@ import {
   GetVSCodeUrlResponse,
   AuthenticateResponse,
   Conversation,
+  ResultSet,
 } from "./open-hands.types";
 import { openHands } from "./open-hands-axios";
-import { Settings } from "#/services/settings";
+import { ApiSettings } from "#/services/settings";
 
 class OpenHands {
   /**
@@ -222,8 +223,10 @@ class OpenHands {
   }
 
   static async getUserConversations(): Promise<Conversation[]> {
-    const { data } = await openHands.get<Conversation[]>("/api/conversations");
-    return data;
+    const { data } = await openHands.get<ResultSet<Conversation>>(
+      "/api/conversations?limit=9",
+    );
+    return data.results;
   }
 
   static async deleteUserConversation(conversationId: string): Promise<void> {
@@ -232,19 +235,17 @@ class OpenHands {
 
   static async updateUserConversation(
     conversationId: string,
-    conversation: Partial<Omit<Conversation, "id">>,
+    conversation: Partial<Omit<Conversation, "conversation_id">>,
   ): Promise<void> {
-    await openHands.put(`/api/conversations/${conversationId}`, conversation);
+    await openHands.patch(`/api/conversations/${conversationId}`, conversation);
   }
 
   static async createConversation(
-    settings: Settings,
     githubToken?: string,
     selectedRepository?: string,
   ): Promise<Conversation> {
     const body = {
       github_token: githubToken,
-      args: settings,
       selected_repository: selectedRepository,
     };
 
@@ -296,6 +297,23 @@ class OpenHands {
       },
     });
     return data;
+  }
+
+  /**
+   * Get the settings from the server or use the default settings if not found
+   */
+  static async getSettings(): Promise<ApiSettings> {
+    const { data } = await openHands.get<ApiSettings>("/api/settings");
+    return data;
+  }
+
+  /**
+   * Save the settings to the server. Only valid settings are saved.
+   * @param settings - the settings to save
+   */
+  static async saveSettings(settings: Partial<ApiSettings>): Promise<boolean> {
+    const data = await openHands.post("/api/settings", settings);
+    return data.status === 200;
   }
 }
 

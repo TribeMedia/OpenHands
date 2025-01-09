@@ -1,29 +1,53 @@
 import { delay, http, HttpResponse } from "msw";
-import { Conversation } from "#/api/open-hands.types";
+import {
+  GetConfigResponse,
+  Conversation,
+  ResultSet,
+} from "#/api/open-hands.types";
+import { DEFAULT_SETTINGS } from "#/services/settings";
+
+const userPreferences = {
+  settings: {
+    llm_model: DEFAULT_SETTINGS.LLM_MODEL,
+    llm_base_url: DEFAULT_SETTINGS.LLM_BASE_URL,
+    llm_api_key: DEFAULT_SETTINGS.LLM_API_KEY,
+    agent: DEFAULT_SETTINGS.AGENT,
+    language: DEFAULT_SETTINGS.LANGUAGE,
+    confirmation_mode: DEFAULT_SETTINGS.CONFIRMATION_MODE,
+    security_analyzer: DEFAULT_SETTINGS.SECURITY_ANALYZER,
+  },
+};
 
 const conversations: Conversation[] = [
   {
     conversation_id: "1",
-    name: "My New Project",
-    repo: null,
-    lastUpdated: new Date().toISOString(),
-    state: "running",
+    title: "My New Project",
+    selected_repository: null,
+    last_updated_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    status: "RUNNING",
   },
   {
     conversation_id: "2",
-    name: "Repo Testing",
-    repo: "octocat/hello-world",
+    title: "Repo Testing",
+    selected_repository: "octocat/hello-world",
     // 2 days ago
-    lastUpdated: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    state: "cold",
+    last_updated_at: new Date(
+      Date.now() - 2 * 24 * 60 * 60 * 1000,
+    ).toISOString(),
+    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    status: "STOPPED",
   },
   {
     conversation_id: "3",
-    name: "Another Project",
-    repo: "octocat/earth",
+    title: "Another Project",
+    selected_repository: "octocat/earth",
     // 5 days ago
-    lastUpdated: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    state: "finished",
+    last_updated_at: new Date(
+      Date.now() - 5 * 24 * 60 * 60 * 1000,
+    ).toISOString(),
+    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+    status: "STOPPED",
   },
 ];
 
@@ -35,24 +59,22 @@ const CONVERSATIONS = new Map<string, Conversation>(
 );
 
 const openHandsHandlers = [
-  http.get("/api/options/models", async () => {
-    await delay();
-    return HttpResponse.json([
+  http.get("/api/options/models", async () =>
+    HttpResponse.json([
       "gpt-3.5-turbo",
       "gpt-4o",
       "anthropic/claude-3.5",
-    ]);
-  }),
+      "anthropic/claude-3-5-sonnet-20241022",
+    ]),
+  ),
 
-  http.get("/api/options/agents", async () => {
-    await delay();
-    return HttpResponse.json(["CodeActAgent", "CoActAgent"]);
-  }),
+  http.get("/api/options/agents", async () =>
+    HttpResponse.json(["CodeActAgent", "CoActAgent"]),
+  ),
 
-  http.get("/api/options/security-analyzers", async () => {
-    await delay();
-    return HttpResponse.json(["mock-invariant"]);
-  }),
+  http.get("/api/options/security-analyzers", async () =>
+    HttpResponse.json(["mock-invariant"]),
+  ),
 
   http.get(
     "http://localhost:3001/api/conversations/:conversationId/list-files",
@@ -137,6 +159,33 @@ export const handlers = [
   http.post("https://us.i.posthog.com/e", async () =>
     HttpResponse.json(null, { status: 200 }),
   ),
+  http.get("/api/options/config", () => {
+    const config: GetConfigResponse = {
+      APP_MODE: "oss",
+      GITHUB_CLIENT_ID: "fake-github-client-id",
+      POSTHOG_CLIENT_KEY: "fake-posthog-client-key",
+    };
+
+    return HttpResponse.json(config);
+  }),
+  http.get("/api/settings", async () =>
+    HttpResponse.json(userPreferences.settings),
+  ),
+  http.post("/api/settings", async ({ request }) => {
+    const body = await request.json();
+
+    if (body) {
+      userPreferences.settings = {
+        ...userPreferences.settings,
+        // @ts-expect-error - We know this is a settings object
+        ...body,
+      };
+
+      return HttpResponse.json(null, { status: 200 });
+    }
+
+    return HttpResponse.json(null, { status: 400 });
+  }),
 
   http.post("/api/authenticate", async () =>
     HttpResponse.json({ message: "Authenticated" }),
@@ -144,9 +193,15 @@ export const handlers = [
 
   http.get("/api/options/config", () => HttpResponse.json({ APP_MODE: "oss" })),
 
-  http.get("/api/conversations", async () =>
-    HttpResponse.json(Array.from(CONVERSATIONS.values())),
-  ),
+  http.get("/api/conversations", async () => {
+    const values = Array.from(CONVERSATIONS.values());
+    const results: ResultSet<Conversation> = {
+      results: values,
+      next_page_id: null,
+    };
+
+    return HttpResponse.json(results, { status: 200 });
+  }),
 
   http.delete("/api/conversations/:conversationId", async ({ params }) => {
     const { conversationId } = params;
@@ -159,7 +214,7 @@ export const handlers = [
     return HttpResponse.json(null, { status: 404 });
   }),
 
-  http.put(
+  http.patch(
     "/api/conversations/:conversationId",
     async ({ params, request }) => {
       const { conversationId } = params;
@@ -169,10 +224,10 @@ export const handlers = [
 
         if (conversation) {
           const body = await request.json();
-          if (typeof body === "object" && body?.name) {
+          if (typeof body === "object" && body?.title) {
             CONVERSATIONS.set(conversationId, {
               ...conversation,
-              name: body.name,
+              title: body.title,
             });
             return HttpResponse.json(null, { status: 200 });
           }
@@ -186,10 +241,11 @@ export const handlers = [
   http.post("/api/conversations", () => {
     const conversation: Conversation = {
       conversation_id: (Math.random() * 100).toString(),
-      name: "New Conversation",
-      repo: null,
-      lastUpdated: new Date().toISOString(),
-      state: "warm",
+      title: "New Conversation",
+      selected_repository: null,
+      last_updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      status: "RUNNING",
     };
 
     CONVERSATIONS.set(conversation.conversation_id, conversation);

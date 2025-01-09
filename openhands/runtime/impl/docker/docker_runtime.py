@@ -10,9 +10,8 @@ from openhands.core.config import AppConfig
 from openhands.core.exceptions import (
     AgentRuntimeDisconnectedError,
     AgentRuntimeNotFoundError,
-    AgentRuntimeNotReadyError,
 )
-from openhands.core.logger import DEBUG
+from openhands.core.logger import DEBUG, DEBUG_RUNTIME
 from openhands.core.logger import openhands_logger as logger
 from openhands.events import EventStream
 from openhands.runtime.builder import DockerRuntimeBuilder
@@ -139,7 +138,10 @@ class DockerRuntime(ActionExecutionClient):
                 f'Container started: {self.container_name}. VSCode URL: {self.vscode_url}',
             )
 
-        self.log_streamer = LogStreamer(self.container, self.log)
+        if DEBUG_RUNTIME:
+            self.log_streamer = LogStreamer(self.container, self.log)
+        else:
+            self.log_streamer = None
 
         if not self.attach_to_existing:
             self.log('info', f'Waiting for client to become ready at {self.api_url}...')
@@ -266,6 +268,12 @@ class DockerRuntime(ActionExecutionClient):
                 detach=True,
                 environment=environment,
                 volumes=volumes,
+                device_requests=(
+                    [docker.types.DeviceRequest(capabilities=[['gpu']], count=-1)]
+                    if self.config.sandbox.enable_gpu
+                    else None
+                ),
+                **(self.config.sandbox.docker_runtime_kwargs or {}),
             )
             self.log('debug', f'Container started. Server url: {self.api_url}')
             self.send_status_message('STATUS$CONTAINER_STARTED')
@@ -325,9 +333,6 @@ class DockerRuntime(ActionExecutionClient):
                 f'Container {self.container_name} not found.'
             )
 
-        if not self.log_streamer:
-            raise AgentRuntimeNotReadyError('Runtime client is not ready.')
-
         self.check_if_alive()
 
     def close(self, rm_all_containers: bool | None = None):
@@ -370,7 +375,6 @@ class DockerRuntime(ActionExecutionClient):
     @property
     def vscode_url(self) -> str | None:
         token = super().get_vscode_token()
-        print('got token', token)
         if not token:
             return None
         vscode_url = f'http://localhost:{self._host_port + 1}/?tkn={token}&folder={self.config.workspace_mount_path_in_sandbox}'

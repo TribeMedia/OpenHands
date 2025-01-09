@@ -22,7 +22,6 @@ import { WsClientProvider } from "#/context/ws-client-provider";
 import { EventHandler } from "./event-handler";
 import { useLatestRepoCommit } from "#/hooks/query/use-latest-repo-commit";
 import { useAuth } from "#/context/auth-context";
-import { useSettings } from "#/context/settings-context";
 import { useConversationConfig } from "#/hooks/query/use-conversation-config";
 import { Container } from "#/components/layout/container";
 import {
@@ -34,14 +33,16 @@ import { useEndSession } from "#/hooks/use-end-session";
 import { useUserConversation } from "#/hooks/query/get-conversation-permissions";
 import { CountBadge } from "#/components/layout/count-badge";
 import { TerminalStatusLabel } from "#/components/features/terminal/terminal-status-label";
-import { MULTI_CONVO_UI_IS_ENABLED } from "#/utils/constants";
+import { useSettings } from "#/hooks/query/use-settings";
+import { MULTI_CONVERSATION_UI } from "#/utils/feature-flags";
 
 function AppContent() {
   const { gitHubToken } = useAuth();
+  const { data: settings } = useSettings();
+
   const endSession = useEndSession();
   const [width, setWidth] = React.useState(window.innerWidth);
 
-  const { settings } = useSettings();
   const { conversationId } = useConversation();
 
   const dispatch = useDispatch();
@@ -72,7 +73,7 @@ function AppContent() {
   );
 
   React.useEffect(() => {
-    if (MULTI_CONVO_UI_IS_ENABLED && isFetched && !conversation) {
+    if (MULTI_CONVERSATION_UI && isFetched && !conversation) {
       toast.error(
         "This conversation does not exist, or you do not have permission to access it.",
       );
@@ -122,7 +123,7 @@ function AppContent() {
         orientation={Orientation.HORIZONTAL}
         className="grow h-full min-h-0 min-w-0"
         initialSize={500}
-        firstClassName="rounded-xl overflow-hidden border border-neutral-600"
+        firstClassName="rounded-xl overflow-hidden border border-neutral-600 bg-neutral-800"
         secondClassName="flex flex-col overflow-hidden"
         firstChild={<ChatInterface />}
         secondChild={
@@ -174,7 +175,7 @@ function AppContent() {
   }
 
   return (
-    <WsClientProvider ghToken={gitHubToken} conversationId={conversationId}>
+    <WsClientProvider conversationId={conversationId}>
       <EventHandler>
         <div data-testid="app-route" className="flex flex-col h-full gap-3">
           <div className="flex h-full overflow-auto">{renderMain()}</div>
